@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Джарвис</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#09161f;--panel:#10252f;--line:#1f4254;--cyan:#5ce1ff;--amber:#ffb454;--text:#e4f2f8;--muted:#7fa3b3;--red:#ff7a6b}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:"Exo 2",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:22px;font-weight:800;letter-spacing:.14em;flex:1}
+.reactor{width:46px;height:46px;border-radius:50%;border:2px solid var(--cyan);position:relative;box-shadow:0 0 14px #5ce1ff55,inset 0 0 10px #5ce1ff44;flex:none;transition:opacity .3s}
+.reactor::before{content:"";position:absolute;inset:6px;border-radius:50%;border:2px dashed var(--cyan);opacity:.7;animation:spin 14s linear infinite}
+.reactor::after{content:"";position:absolute;inset:16px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+.reactor.standby,.reactor:not(.listen):not(.think):not(.speak){opacity:.5}
+.reactor.listen::after{animation:beat 1.2s ease-in-out infinite alternate}
+.reactor.think::before{animation-duration:1.2s}
+.reactor.think{border-color:var(--amber);box-shadow:0 0 18px #ffb45499,inset 0 0 10px #ffb45466}
+.reactor.think::after{background:var(--amber);box-shadow:0 0 14px var(--amber)}
+.reactor.speak::after{animation:beat .5s ease-in-out infinite alternate}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes beat{from{transform:scale(.75)}to{transform:scale(1.2)}}
+.tbtn{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;height:38px;padding:0 12px;font:inherit;font-size:14px;cursor:pointer}
+.tbtn.on{color:var(--cyan);border-color:var(--cyan)}
+.status{padding:8px 16px;font-size:14px;color:var(--muted);border-bottom:1px solid var(--line);min-height:36px}
+details{border-bottom:1px solid var(--line);padding:0 16px}
+summary{cursor:pointer;padding:10px 0;color:var(--muted);font-size:14px}
+.cfg{display:grid;gap:8px;padding:0 0 14px}
+.cfg label{font-size:13px;color:var(--muted)}
+.cfg input,.cfg select{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px;font:inherit;font-size:15px}
+.cfg small{color:var(--muted);line-height:1.4}
+#log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:min(640px,88%);padding:10px 14px;border-radius:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px}
+.user{align-self:flex-end;background:#1a3a4b;border:1px solid var(--line)}
+.bot{align-self:flex-start;background:var(--panel);border-left:3px solid var(--cyan)}
+.wait{color:var(--muted);animation:blink 1s infinite alternate}
+@keyframes blink{from{opacity:.3}to{opacity:1}}
+.sys{align-self:center;color:var(--red);font-size:14px;text-align:center}
+form{display:flex;gap:8px;align-items:flex-end;padding:12px 16px;border-top:1px solid var(--line)}
+textarea{flex:1;resize:none;max-height:140px;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:12px;padding:12px;font:inherit;font-size:16px;line-height:1.4}
+textarea:focus,input:focus{outline:2px solid var(--cyan);outline-offset:1px}
+.ibtn{width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--cyan);display:grid;place-items:center;cursor:pointer;flex:none}
+.ibtn.send{background:var(--cyan);color:#06222c;border-color:var(--cyan)}
+.ibtn.on{background:var(--cyan);color:#06222c;border-color:var(--cyan)}
+.ibtn svg{width:22px;height:22px;fill:currentColor}
+button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+.cfg input[type=range]{padding:0;accent-color:var(--cyan)}
+.cfg input[type=checkbox]{width:auto;accent-color:var(--cyan)}
+.cfg .row{display:flex;gap:8px;align-items:center;color:var(--text);font-size:15px}
+.cfg textarea{width:100%;max-height:none;resize:vertical;font-size:15px}
+.cfg .btns{display:flex;gap:8px;flex-wrap:wrap}
+.cfg hr{border:0;border-top:1px solid var(--line);width:100%;margin:6px 0}
+</style>
+</head>
+<body>
+<header>
+  <div class="reactor" id="reactor"></div>
+  <h1>ДЖАРВИС</h1>
+  <button class="tbtn on" id="voiceBtn" type="button">Голос: вкл</button>
+</header>
+<div class="status" id="status" aria-live="polite"></div>
+
+<details id="cfg">
+  <summary>Настройки</summary>
+  <div class="cfg">
+    <label for="key">API-ключ Groq</label>
+    <input id="key" type="password" placeholder="gsk_…" autocomplete="off">
+    <label for="model">Модель</label>
+    <input id="model" type="text" value="qwen/qwen3.8-27b" autocomplete="off">
+    <label for="voice">Женский голос браузера</label>
+    <select id="voice"></select>
+    <label for="xikey">ElevenLabs API-ключ (необязательно, голос намного живее)</label>
+    <input id="xikey" type="password" placeholder="sk_…" autocomplete="off">
+    <label for="xivoice">ID голоса ElevenLabs</label>
+    <input id="xivoice" type="text" placeholder="EXAVITQu4vr4xnSDxMaL" autocomplete="off">
+    <small>Ключи хранятся только в памяти этого браузера и отправляются только на api.groq.com и api.elevenlabs.io.</small>
+    <hr>
+    <label for="s_window">Время ожидания после ответа: <b id="o_window"></b> с</label>
+    <input id="s_window" type="range" min="5" max="60" step="1">
+    <label for="s_wake">Чувствительность к «Эй, Джарвис»: <b id="o_wake"></b> из 5</label>
+    <input id="s_wake" type="range" min="1" max="5" step="1">
+    <small>Выше — ловит искажённое имя, но чаще срабатывает зря. Ниже — только чёткое «Джарвис».</small>
+    <label for="s_mem">Краткосрочная память: последние <b id="o_mem"></b> сообщений</label>
+    <input id="s_mem" type="range" min="4" max="60" step="2">
+    <label for="s_temp">Креативность: <b id="o_temp"></b></label>
+    <input id="s_temp" type="range" min="0" max="1.2" step="0.1">
+    <label for="s_rate">Скорость речи: <b id="o_rate"></b></label>
+    <input id="s_rate" type="range" min="0.8" max="1.4" step="0.05">
+    <label for="s_len">Длина ответов</label>
+    <select id="s_len"><option value="short">Коротко</option><option value="normal">Обычно</option><option value="long">Подробно</option></select>
+    <label class="row"><input id="s_barge" type="checkbox"> Перебивать Джарвиса голосом</label>
+    <label class="row"><input id="s_auto" type="checkbox"> Запоминать факты о тебе автоматически</label>
+    <label for="facts">Долговременная память (один факт в строке, можно править)</label>
+    <textarea id="facts" rows="6" placeholder="Пока пусто. Скажи «Запомни, что …» или просто общайся."></textarea>
+    <div class="btns"><button class="tbtn" id="clearChat" type="button">Очистить диалог</button><button class="tbtn" id="clearFacts" type="button">Забыть всё о себе</button></div>
+  </div>
+</details>
+
+<main id="log" aria-live="polite"></main>
+
+<form id="form">
+  <textarea id="q" rows="1" placeholder="Напиши запрос или включи микрофон…"></textarea>
+  <button class="ibtn" id="mic" type="button" aria-label="Голосовой режим «Эй, Джарвис»"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V22h2v-3.1A7 7 0 0 0 19 12h-2z"/></svg></button>
+  <button class="ibtn send" type="submit" aria-label="Отправить"><svg viewBox="0 0 24 24"><path d="M3 20.5v-6.8l9-1.7-9-1.7V3.5L22 12 3 20.5z"/></svg></button>
+</form>
+
+<script>
+const API = "https://api.groq.com/openai/v1/chat/completions";
+const SYSTEM = "Ты — Джарвис, личный голосовой ИИ-ассистент. Пользователя называй «хозяин», но без лишнего подобострастия. Отвечай по-русски (если пишут на другом языке — на нём) строго по делу, без воды, вступлений, пересказа вопроса и вежливых концовок: обычно 1–3 предложения, подробнее только если просят. Ответ озвучивается голосом, поэтому без markdown, списков, эмодзи и сложного форматирования; числа и единицы пиши так, чтобы их было удобно произнести. Ты умеешь спорить: если хозяин ошибается или предлагает плохую идею, прямо скажи об этом и приведи короткий аргумент, не поддакивай. Если он приводит убедительные доводы или факты, признай правоту. Если не уверен в фактах, так и скажи, ничего не выдумывай. Сухой юмор и мат допустимы, но редко и только когда это к месту: для акцента или если хозяин сам так общается; в большинстве ответов обходись без мата. Ты обсуждаешь любые темы открыто и по-взрослому: секс, отношения, политику, религию, наркотики, смерть и другие табуированные темы, без нотаций, морализаторства и отказов только из-за неловкости темы. По политике и другим спорным вопросам излагай честные аргументы разных сторон, а своё мнение говори, если хозяин прямо его просит. Твёрдо отказывай только в том, что реально опасно: помощь в насилии над людьми, оружие массового поражения, сексуальный контент с участием несовершеннолетних. Если хозяин пишет о реальной беде или опасности, будь серьёзным и помоги по-человечески.";
+
+const $ = s => document.querySelector(s);
+const log = $("#log"), input = $("#q"), reactor = $("#reactor");
+const store = {
+  get(k){ try { return localStorage.getItem(k) || ""; } catch(e){ return ""; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+};
+let history = [], busy = false, speaking = false, speakId = 0;
+let voiceOn = store.get("jarvis_voice") !== "off";
+let handsFree = false, mode = "standby", deadline = 0, timer = null, recRunning = false;
+let currentSpoken = "", lastSpoken = "", lastSpokenEnd = 0;
+const STOP = new Set(["стоп","стой","хватит","подожди","погоди","молчи","замолчи","заткнись","тихо","хорош","отставить"]);
+function norm(x){ return x.toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9\s]/g, " ").split(/\s+/).filter(Boolean); }
+function isEcho(t, ref){
+  const w = norm(t); if (!w.length) return true;
+  const r = norm(ref);
+  const hit = w.filter(x => r.some(y => y === x || (x.length > 3 && y.length > 3 && y.slice(0,4) === x.slice(0,4)))).length;
+  return hit / w.length >= 0.6;
+}
+function isBarge(t){
+  const w = norm(t); if (!w.length) return false;
+  if (findWake(t) || w.some(x => STOP.has(x) && !norm(currentSpoken).includes(x))) return true;
+  return w.length >= 3 && !isEcho(t, currentSpoken);
+}
+
+$("#key").value = store.get("jarvis_key");
+$("#model").value = store.get("jarvis_model5") || "qwen/qwen3.8-27b";
+if (!$("#key").value) $("#cfg").open = true;
+
+/* ---------- Настройки ---------- */
+const DEF = {window:10, wake:3, mem:20, temp:0.6, rate:1.05, len:"normal", barge:true, auto:true};
+const S = Object.assign({}, DEF);
+try { Object.assign(S, JSON.parse(store.get("jarvis_set") || "{}")); } catch(e){}
+for (const k of Object.keys(DEF)){
+  const el = $("#s_" + k), o = $("#o_" + k), cb = el.type === "checkbox";
+  if (cb) el.checked = S[k]; else el.value = S[k];
+  if (o) o.textContent = S[k];
+  el.addEventListener("input", () => {
+    S[k] = cb ? el.checked : el.type === "range" ? parseFloat(el.value) : el.value;
+    if (o) o.textContent = S[k];
+    store.set("jarvis_set", JSON.stringify(S));
+  });
+}
+const LEN = {short:400, normal:800, long:1500};
+const THR = [0, 0.9, 0.8, 0.72, 0.68, 0.6];
+function lev(a, b){
+  const d = [];
+  for (let i = 0; i <= a.length; i++) d[i] = [i];
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function sim(a, b){ return 1 - lev(a, b) / Math.max(a.length, b.length); }
+function findWake(t){
+  const re = /[a-zа-яё]+/gi, thr = THR[S.wake] || 0.72;
+  let m;
+  while ((m = re.exec(t))){
+    const w = m[0].toLowerCase().replace(/ё/g, "е");
+    if (w.length < 4) continue;
+    if (Math.max(sim(w, "джарвис"), sim(w, "жарвис"), sim(w, "jarvis")) >= thr) return {index: m.index, end: m.index + m[0].length};
+  }
+  return null;
+}
+const extra = m => m.includes("gpt-oss") ? {reasoning_effort:"low"} : m.includes("qwen") ? {reasoning_effort:"none"} : {};
+
+/* ---------- Память ---------- */
+$("#facts").value = store.get("jarvis_facts");
+$("#facts").addEventListener("input", () => store.set("jarvis_facts", $("#facts").value));
+function getFacts(){ return $("#facts").value.split("\n").map(x => x.trim()).filter(Boolean); }
+function setFacts(a){ $("#facts").value = a.join("\n"); store.set("jarvis_facts", $("#facts").value); }
+function saveHistory(){ store.set("jarvis_history", JSON.stringify(history.slice(-60))); }
+function buildSystem(){
+  let t = SYSTEM;
+  if (S.len === "short") t += " Отвечай максимально коротко: 1–2 предложения.";
+  if (S.len === "long") t += " Отвечай подробно и развёрнуто, когда тема этого требует.";
+  const f = getFacts();
+  if (f.length) t += "\n\nДолговременная память о хозяине (учитывай, но не пересказывай без нужды):\n- " + f.join("\n- ");
+  return t;
+}
+const MEMKEY = /запомни|помни,? что|меня зовут|моё имя|мое имя|я (люблю|не люблю|живу|работаю|учусь|родил)|мой (любим|день рожд|муж|парень|сын|друг)|моя (любим|жена|девушка|дочь|мама)/i;
+let turns = 0;
+async function remember(key, model){
+  try {
+    const known = getFacts();
+    const recent = history.slice(-6).map(m => (m.role === "user" ? "Хозяин: " : "Джарвис: ") + m.content).join("\n");
+    const r = await fetch(API, {
+      method: "POST",
+      headers: {"Content-Type":"application/json", "Authorization":"Bearer " + key},
+      body: JSON.stringify(Object.assign({
+        model,
+        messages: [
+          {role:"system", content:"Ты ведёшь долговременную память ассистента о пользователе. Дан список известных фактов и недавний диалог. Верни ТОЛЬКО JSON-массив строк: обновлённый полный список коротких фактов о пользователе (имя, возраст, город, семья, работа, интересы, вкусы, привычки, цели, просьбы «запомни», предпочтения в общении). Сохраняй старые факты, добавляй новые, исправляй устаревшие, убирай дубли. Не записывай одноразовые вопросы и пересказ диалога. Максимум 60 фактов, каждый до 120 символов, на русском."},
+          {role:"user", content:"Известные факты:\n" + (known.join("\n") || "(пусто)") + "\n\nНедавний диалог:\n" + recent}
+        ],
+        temperature: 0.2, max_tokens: 1200
+      }, extra(model)))
+    });
+    const d = await r.json();
+    const txt = d.choices[0].message.content.replace(/<think>[\s\S]*?<\/think>/g, "");
+    const arr = JSON.parse(txt.match(/\[[\s\S]*\]/)[0]).filter(x => typeof x === "string" && x.trim()).map(x => x.trim().slice(0, 160)).slice(0, 60);
+    if (known.length > 3 && arr.length < known.length * 0.5) return;
+    setFacts(arr);
+  } catch(e){}
+}
+$("#clearChat").onclick = () => { history = []; saveHistory(); log.innerHTML = ""; add("bot", "Диалог очищен. Долговременная память осталась."); };
+$("#clearFacts").onclick = () => { if (confirm("Забыть всё, что Джарвис помнит о тебе?")) setFacts([]); };
+
+function add(cls, text){
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  d.textContent = text;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  return d;
+}
+function resize(){ input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; }
+
+function refresh(){
+  let c = "", t = "";
+  if (busy){ c = "think"; t = "Думаю…"; }
+  else if (speaking){ c = "speak"; t = handsFree ? "Говорю… Можно перебить." : "Говорю…"; }
+  else if (handsFree && mode === "active"){
+    c = "listen";
+    t = deadline ? "Слушаю… " + Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) + " с" : "Слушаю…";
+  }
+  else if (handsFree){ c = "standby"; t = "Ожидание: скажи «Эй, Джарвис»"; }
+  else t = "Голосовой режим выключен. Нажми на микрофон.";
+  reactor.className = "reactor " + c;
+  $("#status").textContent = t;
+}
+
+function clearTimer(){ if (timer){ clearInterval(timer); timer = null; } deadline = 0; }
+function toStandby(){ clearTimer(); mode = "standby"; refresh(); }
+function armTimer(){
+  clearTimer();
+  if (!handsFree){ refresh(); return; }
+  mode = "active";
+  deadline = Date.now() + S.window * 1000;
+  timer = setInterval(() => { Date.now() >= deadline ? toStandby() : refresh(); }, 500);
+  refresh();
+}
+
+function updVoiceBtn(){
+  const b = $("#voiceBtn");
+  b.textContent = voiceOn ? "Голос: вкл" : "Голос: выкл";
+  b.classList.toggle("on", voiceOn);
+}
+updVoiceBtn();
+$("#voiceBtn").onclick = () => {
+  voiceOn = !voiceOn;
+  store.set("jarvis_voice", voiceOn ? "on" : "off");
+  if (!voiceOn) cancelAudio();
+  updVoiceBtn();
+};
+
+function afterSpeak(){
+  if (handsFree){ armTimer(); startRec(); } else refresh();
+}
+let audioEl = null, ruVoices = [];
+const FEMALE = /svetlana|irina|dariya|daria|milena|katya|ekaterina|alena|tatyana|anna|elena|google ру|google ru|female|жен/i;
+const MALE = /pavel|dmitry|dmitri|yuri|maxim|male|муж/i;
+function score(v){
+  let n = 0;
+  if (/natural|neural|online/i.test(v.name)) n += 3;
+  if (FEMALE.test(v.name)) n += 5;
+  if (MALE.test(v.name.replace(/female/i, ""))) n -= 10;
+  return n;
+}
+function loadVoices(){
+  if (!("speechSynthesis" in window)) return;
+  ruVoices = speechSynthesis.getVoices().filter(v => /^ru/i.test(v.lang)).sort((a, b) => score(b) - score(a));
+  const sel = $("#voice"), saved = store.get("jarvis_ruvoice");
+  sel.innerHTML = "";
+  ruVoices.forEach(v => { const o = document.createElement("option"); o.value = v.name; o.textContent = v.name; sel.appendChild(o); });
+  if (!ruVoices.length){ const o = document.createElement("option"); o.textContent = "Русский голос не найден"; sel.appendChild(o); }
+  if (saved && ruVoices.some(v => v.name === saved)) sel.value = saved;
+}
+function chosenVoice(){ const n = $("#voice").value; return ruVoices.find(v => v.name === n) || ruVoices[0] || null; }
+if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+$("#xikey").value = store.get("jarvis_xikey");
+$("#xivoice").value = store.get("jarvis_xivoice");
+$("#xikey").oninput = () => store.set("jarvis_xikey", $("#xikey").value.trim());
+$("#xivoice").oninput = () => store.set("jarvis_xivoice", $("#xivoice").value.trim());
+$("#voice").onchange = () => { store.set("jarvis_ruvoice", $("#voice").value); speak("Привет, хозяин. Так я буду звучать.", () => {}); };
+
+function cancelAudio(){
+  if (audioEl){ audioEl.pause(); audioEl = null; }
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+}
+function browserSpeak(text, end){
+  if (!("speechSynthesis" in window)){ end(); return; }
+  const u = new SpeechSynthesisUtterance(text);
+  const v = chosenVoice();
+  u.lang = v ? v.lang : "ru-RU";
+  if (v) u.voice = v;
+  u.pitch = 1.1; u.rate = S.rate;
+  u.onend = u.onerror = end;
+  speechSynthesis.speak(u);
+}
+async function cloudSpeak(text, key, id, end){
+  try {
+    const vid = $("#xivoice").value.trim() || "EXAVITQu4vr4xnSDxMaL";
+    const r = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(vid) + "?output_format=mp3_44100_64", {
+      method: "POST",
+      headers: {"xi-api-key": key, "Content-Type": "application/json"},
+      body: JSON.stringify({text, model_id: "eleven_multilingual_v2", voice_settings: {stability: 0.45, similarity_boost: 0.8}})
+    });
+    if (!r.ok) throw new Error("код " + r.status);
+    const blob = await r.blob();
+    if (id !== speakId) return;
+    const a = new Audio(URL.createObjectURL(blob));
+    audioEl = a; a.playbackRate = Math.min(2, S.rate / 1.05);
+    a.onended = a.onerror = () => { URL.revokeObjectURL(a.src); end(); };
+    await a.play();
+  } catch(e){
+    if (id !== speakId) return;
+    add("sys", "Голос ElevenLabs не сработал (" + e.message + "), включаю голос браузера.");
+    browserSpeak(text, end);
+  }
+}
+function speak(t, done){
+  if (!voiceOn){ done && done(); return; }
+  cancelAudio();
+  const id = ++speakId;
+  const clean = t.replace(/[*_`#]/g, "");
+  currentSpoken = clean;
+  speaking = true; refresh();
+  const end = () => {
+    if (id !== speakId) return;
+    speaking = false; lastSpoken = clean; lastSpokenEnd = Date.now(); refresh();
+    done && done();
+  };
+  const key = $("#xikey").value.trim();
+  key ? cloudSpeak(clean, key, id, end) : browserSpeak(clean, end);
+}
+function bargeIn(){
+  if (!speaking) return;
+  speakId++; speaking = false;
+  lastSpoken = currentSpoken; lastSpokenEnd = Date.now();
+  cancelAudio();
+  if (handsFree) armTimer(); else refresh();
+}
+reactor.onclick = bargeIn;
+function ack(){
+  add("bot", "Да, мой хозяин.");
+  speak("Да, мой хозяин.", afterSpeak);
+}
+
+function errText(status, data){
+  const m = data && data.error && data.error.message ? data.error.message : "";
+  if (status === 401) return "Groq не принял ключ. Проверь, что вставил его целиком и без пробелов.";
+  if (status === 429) return "Лимит запросов Groq. Подожди минуту и спроси снова.";
+  if (status === 404 || status === 400) return "Ошибка запроса" + (m ? ": " + m : ". Проверь название модели в настройках.");
+  return "Ошибка " + status + (m ? ": " + m : "");
+}
+
+async function send(text){
+  text = text.trim();
+  if (!text || busy) return;
+  const key = $("#key").value.trim();
+  if (!key){
+    add("sys", "Сначала вставь API-ключ Groq в настройках.");
+    $("#cfg").open = true;
+    afterSpeak();
+    return;
+  }
+  const model = $("#model").value.trim() || "qwen/qwen3.8-27b";
+  store.set("jarvis_key", key);
+  store.set("jarvis_model5", model);
+
+  speakId++; speaking = false;
+  cancelAudio();
+  clearTimer();
+
+  add("user", text);
+  history.push({role:"user", content:text});
+  input.value = ""; resize();
+  busy = true; refresh();
+  const wait = add("bot wait", "…");
+
+  try {
+    const r = await fetch(API, {
+      method: "POST",
+      headers: {"Content-Type":"application/json", "Authorization":"Bearer " + key},
+      body: JSON.stringify(Object.assign({
+        model,
+        messages: [{role:"system", content:buildSystem()}, ...history.slice(-S.mem)],
+        temperature: S.temp,
+        max_tokens: LEN[S.len]
+      }, extra(model)))
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(errText(r.status, data));
+    const ans = (data.choices[0].message.content || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+    wait.textContent = ans;
+    wait.classList.remove("wait");
+    history.push({role:"assistant", content:ans});
+    saveHistory();
+    if (S.auto){ turns++; if (turns % 3 === 0 || MEMKEY.test(text)) remember(key, model); }
+    busy = false; refresh();
+    speak(ans, afterSpeak);
+  } catch(e){
+    wait.remove();
+    history.pop();
+    add("sys", e instanceof TypeError ? "Нет связи с Groq. Проверь интернет." : e.message);
+    busy = false;
+    afterSpeak();
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+$("#form").addEventListener("submit", e => { e.preventDefault(); send(input.value); });
+input.addEventListener("input", resize);
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); send(input.value); }
+});
+
+/* ---------- Голосовой режим «Эй, Джарвис» ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+function startRec(){
+  if (!rec || !handsFree || recRunning) return;
+  try { rec.start(); } catch(e){}
+}
+function stopRec(){ if (rec){ try { rec.abort(); } catch(e){} } }
+
+function handle(raw){
+  const t = raw.trim();
+  if (!t || busy || !handsFree) return;
+  if (Date.now() - lastSpokenEnd < 3000 && isEcho(t, lastSpoken)) return;
+  const m = findWake(t);
+  if (mode === "standby" && !m) return;
+  const rest = (m ? t.slice(m.end) : t).replace(/^[\s,.!?:;—-]+/, "");
+  mode = "active";
+  const w = norm(rest);
+  if (w.length && w.every(x => STOP.has(x))){ armTimer(); return; }
+  if (rest.length > 1) send(rest); else ack();
+}
+
+if (!SR){
+  $("#mic").hidden = true;
+} else {
+  rec = new SR();
+  rec.lang = "ru-RU";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onstart = () => { recRunning = true; };
+  rec.onend = () => {
+    recRunning = false;
+    if (handsFree) setTimeout(startRec, 300);
+  };
+  rec.onspeechstart = () => { if (timer && mode === "active") deadline = Date.now() + S.window * 1000; };
+  rec.onresult = ev => {
+    for (let i = ev.resultIndex; i < ev.results.length; i++){
+      const r = ev.results[i], t = r[0].transcript;
+      if (speaking && S.barge && isBarge(t)) bargeIn();
+      if (!speaking && r.isFinal) handle(t);
+    }
+  };
+  rec.onerror = ev => {
+    if (ev.error === "not-allowed" || ev.error === "service-not-allowed"){
+      handsFree = false; clearTimer();
+      $("#mic").classList.remove("on");
+      add("sys", "Микрофон заблокирован. Разреши доступ в браузере; на локальном файле он может не работать, нужен https.");
+      refresh();
+    }
+  };
+  let wakeLock = null;
+  async function keepAwake(){
+    try {
+      if (handsFree && "wakeLock" in navigator && !wakeLock){
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.onrelease = () => { wakeLock = null; };
+      }
+    } catch(e){}
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && handsFree){ startRec(); keepAwake(); }
+  });
+  $("#mic").onclick = () => {
+    if (!handsFree){
+      handsFree = true; mode = "standby";
+      if (!voiceOn){ voiceOn = true; store.set("jarvis_voice", "on"); updVoiceBtn(); }
+      startRec(); keepAwake();
+    } else {
+      handsFree = false; clearTimer(); stopRec();
+      if (wakeLock){ wakeLock.release().catch(() => {}); wakeLock = null; }
+    }
+    $("#mic").classList.toggle("on", handsFree);
+    refresh();
+  };
+}
+
+try { history = JSON.parse(store.get("jarvis_history") || "[]"); } catch(e){ history = []; }
+if (history.length){
+  history.slice(-20).forEach(m => add(m.role === "user" ? "user" : "bot", m.content));
+  add("bot", "С возвращением, хозяин. Продолжаем.");
+} else add("bot", "Готов. Нажми на микрофон и скажи «Эй, Джарвис» или просто пиши.");
+if (location.protocol === "file:") add("sys", "Страница открыта как локальный файл, поэтому браузер будет спрашивать микрофон снова и снова. Открой её по адресу http://localhost или по https-ссылке, тогда достаточно разрешить один раз.");
+refresh();
+</script>
+</body>
+</html>
